@@ -1,4 +1,5 @@
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+use serde::Deserialize;
 use std::collections::HashMap;
 
 #[get("/")]
@@ -8,11 +9,10 @@ async fn hello() -> impl Responder {
 #[get("/getSlot")]
 async fn getSlot() -> impl Responder {
     let resp = request_slot();
-    if resp.is_ok() {
-        HttpResponse::Ok().body(format!("{} {:#?}", "Hey there!", resp))
-    } else {
-        print!("{:#?}", resp);
-        HttpResponse::Ok().body(format!("{} {}", "Hey there!", "aa"))
+    let re = resp.await;
+    match re {
+        Ok(v) => HttpResponse::Ok().body(format!("{} {}", "Hey there!", v)),
+        _ => HttpResponse::Ok().body(format!("{} {:#?}", "Hey there!", re)),
     }
 }
 
@@ -27,16 +27,29 @@ fn opa() -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
     println!("{:#?}", resp);
     Ok(resp)
 }
-fn request_slot() -> Result<String, Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::new();
-    println!("AHAHAHHAHAHHAH");
+
+#[derive(Debug, Deserialize)]
+struct SlotResponse {
+    jsonrpc: String,
+    result: i32,
+    id: String,
+}
+
+async fn request_slot() -> Result<String, Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let mut req_body = HashMap::new();
+    req_body.insert("jsonrpc", "2.0");
+    req_body.insert("id", "1");
+    req_body.insert("method", "getSlot");
+
     let resp = client
         .post("https://api.mainnet-beta.solana.com")
-        .body("{\"jsonrpc\":\"2.0\",\"id\":1, \"method\":\"getSlot\"}")
-        .send()?
-        .json::<HashMap<String, String>>()?;
-    let res = format!("{:#?}", resp);
-    Ok(res)
+        .json(&req_body)
+        .send()
+        .await?;
+    let r_json = resp.json::<SlotResponse>().await?;
+    print!("{:?}", r_json);
+    Ok(String::from("5454"))
 }
 
 async fn manual_hello() -> impl Responder {
@@ -54,11 +67,10 @@ async fn manual_hello() -> impl Responder {
     }
 }
 async fn get_slot() -> impl Responder {
-    let resp = request_slot();
-    if resp.is_ok() {
-        HttpResponse::Ok().body(format!("{} {:#?}", "Hey there!", resp))
-    } else {
-        HttpResponse::Ok().body(format!("{} {}", "Hey there!", "aa"))
+    let resp = request_slot().await;
+    match resp {
+        Ok(z) => HttpResponse::Ok().body(format!("{} {}", "Origin!", z)),
+        _ => HttpResponse::Ok().body(format!("{} {:#?}", "Error ws there!", resp)),
     }
 }
 
@@ -70,6 +82,7 @@ async fn main() -> std::io::Result<()> {
             .service(echo)
             .service(getSlot)
             .route("/hey", web::get().to(manual_hello))
+            .route("/getSlot2", web::get().to(get_slot))
     })
     .bind("127.0.0.1:8082")?
     .run()
